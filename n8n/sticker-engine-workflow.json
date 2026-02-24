@@ -1,0 +1,205 @@
+{
+  "name": "Click Dog Track - Sticker Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sticker-engine",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.remove.bg/v1.0/removebg",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $credentials.removeBgApi.apiKey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "image_url",
+              "value": "={{ $json.body.imageUrl }}"
+            },
+            {
+              "name": "size",
+              "value": "auto"
+            },
+            {
+              "name": "format",
+              "value": "png"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "remove-bg",
+      "name": "Remove Background",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300],
+      "notesInFlow": true,
+      "notes": "POST image to remove.bg API. Returns transparent PNG as binary."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://firebasestorage.googleapis.com/upload/storage/v1/b/{{ $('Webhook').item.json.body.storageBucket }}/o?uploadType=media&name=users/{{ $('Webhook').item.json.body.userId }}/dogs/{{ $('Webhook').item.json.body.dogId }}/sticker.png",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "image/png"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials.googleApi.accessToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "body": "={{ $binary.data }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "upload-to-storage",
+      "name": "Upload to Firebase Storage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300],
+      "notesInFlow": true,
+      "notes": "Upload the transparent PNG sticker to Firebase Storage."
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://firestore.googleapis.com/v1/projects/{{ $('Webhook').item.json.body.firebaseProjectId }}/databases/(default)/documents/users/{{ $('Webhook').item.json.body.userId }}/dogs/{{ $('Webhook').item.json.body.dogId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials.googleApi.accessToken }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fields\": {\n    \"stickerPhotoUrl\": {\n      \"stringValue\": \"https://firebasestorage.googleapis.com/v0/b/{{ $('Webhook').item.json.body.storageBucket }}/o/users%2F{{ $('Webhook').item.json.body.userId }}%2Fdogs%2F{{ $('Webhook').item.json.body.dogId }}%2Fsticker.png?alt=media\"\n    }\n  }\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "update-firestore",
+      "name": "Update Firestore",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300],
+      "notesInFlow": true,
+      "notes": "Update the dog document with the sticker URL."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"stickerUrl\": \"https://firebasestorage.googleapis.com/v0/b/{{ $('Webhook').item.json.body.storageBucket }}/o/users%2F{{ $('Webhook').item.json.body.userId }}%2Fdogs%2F{{ $('Webhook').item.json.body.dogId }}%2Fsticker.png?alt=media\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1100, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Remove Background",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Background": {
+      "main": [
+        [
+          {
+            "node": "Upload to Firebase Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Firebase Storage": {
+      "main": [
+        [
+          {
+            "node": "Update Firestore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Firestore": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "sticker-engine"
+    }
+  ]
+}
