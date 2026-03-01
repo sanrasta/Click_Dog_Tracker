@@ -7,7 +7,7 @@ import { useTheme } from '../context/ThemeContext';
 const TAB_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   Log: 'paw',
   History: 'time-outline',
-  Trends: 'stats-chart-outline',
+  Routines: 'checkbox-outline',
   Profile: 'person-outline',
 };
 

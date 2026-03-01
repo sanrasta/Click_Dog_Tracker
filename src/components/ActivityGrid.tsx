@@ -4,15 +4,21 @@ import ActivityButton from './ActivityButton';
 import { ACTIVITIES } from '../constants/activities';
 import { ActivityType } from '../types';
 
+const COLUMNS = 3;
+const ROWS = 3;
+const MAX_ITEMS = COLUMNS * ROWS;
+
 interface Props {
   stickerUrl?: string | null;
   onActivityPress: (type: ActivityType) => void;
 }
 
 export default function ActivityGrid({ stickerUrl, onActivityPress }: Props) {
+  const visibleActivities = ACTIVITIES.slice(0, MAX_ITEMS);
+
   return (
     <View style={styles.container}>
-      {ACTIVITIES.map((activity) => (
+      {visibleActivities.map((activity) => (
         <ActivityButton
           key={activity.type}
           activity={activity}
@@ -26,9 +32,10 @@ export default function ActivityGrid({ stickerUrl, onActivityPress }: Props) {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 16,
-    marginTop: 24,
+    marginTop: 12,
   },
 });

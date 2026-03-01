@@ -10,7 +10,7 @@ export type OnboardingStackParamList = {
 export type MainTabParamList = {
   Log: undefined;
   History: undefined;
-  Trends: undefined;
+  Routines: undefined;
   Profile: undefined;
 };
 

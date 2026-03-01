@@ -1,17 +1,20 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useActiveDog } from '../queries/useDogQueries';
-import { useTodayLogs, useCreateLog, useUpdateLogNotes } from '../queries/useLogQueries';
+import { useTodayLogs, useCreateLog, useUpdateLogNotes, useLogsByDateRange } from '../queries/useLogQueries';
 import DogHeroCard from '../components/DogHeroCard';
 import ActivityGrid from '../components/ActivityGrid';
-import LogEntry from '../components/LogEntry';
 import NoteModal from '../components/NoteModal';
+import LevelBar from '../components/LevelBar';
+import XPToast from '../components/XPToast';
 import { ActivityType, ActivityNotes } from '../types';
+import { useGamification, getXPForActivity } from '../hooks/useGamification';
+import { getLevelForXP } from '../constants/gamification';
 
 export default function LogScreen() {
   const { colors } = useTheme();
@@ -21,20 +24,59 @@ export default function LogScreen() {
   const createLog = useCreateLog(dog?.id);
   const updateNotes = useUpdateLogNotes(dog?.id);
 
+  const gamificationRange = useMemo(() => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 90);
+    return { startDate: start, endDate: end };
+  }, []);
+
+  const { data: allLogs } = useLogsByDateRange(
+    dog?.id,
+    gamificationRange.startDate,
+    gamificationRange.endDate
+  );
+
+  const gamification = useGamification(todayLogs, allLogs);
+
   const [noteModal, setNoteModal] = useState<{
     visible: boolean;
     activityType: ActivityType | null;
     logId: string | null;
   }>({ visible: false, activityType: null, logId: null });
 
+  const [xpToast, setXpToast] = useState<{
+    visible: boolean;
+    xp: number;
+    levelUp: { level: number; title: string; emoji: string } | null;
+  }>({ visible: false, xp: 0, levelUp: null });
+
   const handleActivityPress = useCallback(
     async (type: ActivityType) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
+      const xpEarned = getXPForActivity(type, gamification.streak);
+      const predictedXP = gamification.totalXP + xpEarned;
+      const predictedLevel = getLevelForXP(predictedXP);
+      const isLevelUp = predictedLevel.level > gamification.level.level;
+
       const logId = await createLog.mutateAsync({ activityType: type });
+
+      setXpToast({
+        visible: true,
+        xp: xpEarned,
+        levelUp: isLevelUp
+          ? {
+              level: predictedLevel.level,
+              title: predictedLevel.title,
+              emoji: predictedLevel.emoji,
+            }
+          : null,
+      });
+
       setNoteModal({ visible: true, activityType: type, logId });
     },
-    [createLog]
+    [createLog, gamification.streak, gamification.level]
   );
 
   const handleSaveNotes = useCallback(
@@ -54,57 +96,55 @@ export default function LogScreen() {
     setNoteModal({ visible: false, activityType: null, logId: null });
   }, []);
 
+  const handleHideToast = useCallback(() => {
+    setXpToast((prev) => ({ ...prev, visible: false }));
+  }, []);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <FlatList
-        data={todayLogs ?? []}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <LogEntry log={item} />}
-        ListHeaderComponent={
-          <>
-            <View style={styles.header}>
-              <View style={styles.headerLeft}>
-                {dog?.originalPhotoUrl ? (
-                  <Image
-                    source={{ uri: dog.originalPhotoUrl }}
-                    style={styles.avatar}
-                  />
-                ) : (
-                  <View style={[styles.avatar, { backgroundColor: colors.surfaceElevated }]}>
-                    <Ionicons name="paw" size={20} color={colors.primary} />
-                  </View>
-                )}
-                <View style={styles.headerInfo}>
-                  <Text style={[styles.dogName, { color: colors.text }]}>
-                    {dog?.name ?? 'Your Dog'}
-                  </Text>
-                  <Text style={[styles.breed, { color: colors.textSecondary }]}>
-                    {dog?.breed ?? 'Add your dog'}
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={[styles.todayPill, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              >
-                <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
-                <Text style={[styles.todayText, { color: colors.textSecondary }]}>Today</Text>
-              </TouchableOpacity>
-            </View>
-
-            {dog ? <DogHeroCard dog={dog} /> : null}
-
-            <ActivityGrid
-              stickerUrl={dog?.stickerPhotoUrl}
-              onActivityPress={handleActivityPress}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          {dog?.originalPhotoUrl ? (
+            <Image
+              source={{ uri: dog.originalPhotoUrl }}
+              style={styles.avatar}
             />
-
-            <Text style={[styles.sectionTitle, { color: colors.sectionTitle }]}>
-              RECENT LOGS
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: colors.surfaceElevated }]}>
+              <Ionicons name="paw" size={20} color={colors.primary} />
+            </View>
+          )}
+          <View style={styles.headerInfo}>
+            <Text style={[styles.dogName, { color: colors.text }]}>
+              {dog?.name ?? 'Your Dog'}
             </Text>
-          </>
-        }
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
+            <Text style={[styles.breed, { color: colors.textSecondary }]}>
+              {dog?.breed ?? 'Add your dog'}
+            </Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={[styles.todayPill, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        >
+          <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+          <Text style={[styles.todayText, { color: colors.textSecondary }]}>Today</Text>
+        </TouchableOpacity>
+      </View>
+
+      {dog ? <DogHeroCard dog={dog} /> : null}
+
+      <LevelBar gamification={gamification} />
+
+      <ActivityGrid
+        stickerUrl={dog?.stickerPhotoUrl}
+        onActivityPress={handleActivityPress}
+      />
+
+      <XPToast
+        xp={xpToast.xp}
+        levelUp={xpToast.levelUp}
+        visible={xpToast.visible}
+        onHide={handleHideToast}
       />
 
       <NoteModal
@@ -118,8 +158,7 @@ export default function LogScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  listContent: { paddingBottom: 100 },
+  container: { flex: 1, overflow: 'hidden' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -161,13 +200,5 @@ const styles = StyleSheet.create({
   todayText: {
     fontSize: 14,
     fontWeight: '600',
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 12,
   },
 });
